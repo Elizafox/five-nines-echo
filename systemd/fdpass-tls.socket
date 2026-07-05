@@ -1,0 +1,10 @@
+[Unit]
+Description=five-nines-echo TLS TCP listener
+
+[Socket]
+ListenStream=127.0.0.1:7071
+FileDescriptorName=tls
+Service=fdpass.service
+
+[Install]
+WantedBy=sockets.target

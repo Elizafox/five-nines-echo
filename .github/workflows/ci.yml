@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # rustfmt (once) + clippy against both TLS crypto backends. `ring` is the
+  # default; `aws-lc-rs` is the opt-in feature and needs cmake + a C compiler.
+  lint:
+    name: fmt + clippy (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: ring
+            flags: ""
+          - backend: aws-lc-rs
+            flags: "--no-default-features --features aws-lc-rs"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.backend }}
+      - name: Install cmake (aws-lc-rs build dependency)
+        if: matrix.backend == 'aws-lc-rs'
+        run: sudo apt-get update && sudo apt-get install -y cmake
+      - name: rustfmt
+        if: matrix.backend == 'ring'
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets --locked ${{ matrix.flags }} -- -D warnings
+
+  # Unit/integration tests + the Python e2e portability suite on Linux (ring).
+  # The e2e harness is pure stdlib + openssl and adapts to non-root, so no sudo.
+  test-linux:
+    name: test + e2e (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build echod
+        run: cargo build --locked
+      - name: Unit + integration tests
+        run: cargo test --locked
+      - name: Generate TLS cert for the e2e suite
+        run: ./certs/gen.sh
+      - name: e2e portability suite
+        run: python3 e2e/portability.py --bin target/debug/echod
+
+  # Same surface on FreeBSD in a VM: this is what exercises the cfg(freebsd)
+  # capability-mode (Capsicum) paths the host toolchain can't even see.
+  test-freebsd:
+    name: test + e2e (freebsd)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build + test + e2e in a FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y rust python3 bash
+          run: |
+            cargo build --locked
+            cargo test --locked
+            ./certs/gen.sh
+            python3 e2e/portability.py --bin target/debug/echod

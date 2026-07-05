@@ -1,0 +1,41 @@
+[Unit]
+Description=five-nines-echo supervisor
+After=network.target
+# All sockets the supervisor expects to adopt via LISTEN_FDS.
+Sockets=fdpass-admin.socket
+Sockets=fdpass-plain.socket
+Sockets=fdpass-tls.socket
+# In a real deployment, list every fdpass-*.socket here: admin, plain, tls,
+# ctrl-processor, ctrl-plain, ctrl-tls, ctrl-scanner, drainer, spawner,
+# processor, scanner.
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/echod supervisor --config /etc/fdpass.toml
+User=fdpass
+Group=fdpass
+RuntimeDirectory=fdpass
+RuntimeDirectoryMode=0700
+Restart=on-failure
+RestartSec=2s
+
+# systemd liveness watchdog. The supervisor pings WATCHDOG=1 at half this
+# interval, but only while its core select loop keeps being polled (see
+# WatchdogBeacon in src/systemd.rs) — so a wedged tokio runtime is detected
+# and restarted, not just a crashed process (the latter is already covered by
+# Restart=on-failure / the grandparent). Keep this comfortably above the
+# worst-case in-process rolling upgrade: a SIGUSR2-triggered upgrade runs
+# inline in the select loop and briefly stops advancing the beacon, bounded by
+# roles x ready_timeout_secs (a few seconds by default).
+WatchdogSec=30s
+# Only the supervisor (main PID) talks to $NOTIFY_SOCKET; workers never do.
+NotifyAccess=main
+
+# Manual test (real systemd, Linux):
+#   systemctl start fdpass && systemctl status fdpass   # confirm running
+#   kill -STOP <supervisor-pid>                         # freeze the runtime
+#   # within ~WatchdogSec, `journalctl -u fdpass` logs a watchdog timeout and
+#   # the unit is killed (SIGABRT) + restarted per Restart=on-failure.
+
+[Install]
+WantedBy=multi-user.target

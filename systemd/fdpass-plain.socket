@@ -1,0 +1,10 @@
+[Unit]
+Description=five-nines-echo plaintext TCP listener
+
+[Socket]
+ListenStream=127.0.0.1:7070
+FileDescriptorName=plain
+Service=fdpass.service
+
+[Install]
+WantedBy=sockets.target

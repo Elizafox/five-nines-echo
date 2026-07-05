@@ -1,0 +1,14 @@
+[Unit]
+Description=five-nines-echo admin UDS
+
+[Socket]
+ListenStream=/run/fdpass/admin.sock
+SocketMode=0600
+SocketUser=fdpass
+SocketGroup=fdpass
+# Name visible in LISTEN_FDNAMES; supervisor matches by this string.
+FileDescriptorName=admin
+Service=fdpass.service
+
+[Install]
+WantedBy=sockets.target

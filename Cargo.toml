@@ -1,0 +1,93 @@
+[package]
+name = "five-nines-echo"
+version = "0.1.0"
+edition = "2024"
+license = "Unlicense"
+description = "A teaching-oriented Rust + Tokio proof of concept for a zero-downtime self-upgrading Unix daemon."
+
+[[bin]]
+name = "echod"
+path = "src/main.rs"
+
+[lints.rust]
+# `coverage` is set by cargo-llvm-cov (`--cfg=coverage`); declare it so the
+# fork-and-drain coverage flush in acceptor/tls_drain.rs doesn't trip
+# `unexpected_cfgs` on ordinary builds.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+redundant_clone = "warn"
+future_not_send = "warn"
+significant_drop_in_scrutinee = "warn"
+explicit_iter_loop = "warn"
+explicit_into_iter_loop = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+match_wildcard_for_single_variants = "warn"
+items_after_statements = "warn"
+semicolon_if_nothing_returned = "warn"
+ptr_as_ptr = "warn"
+manual_is_variant_and = "warn"
+uninlined_format_args = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+map_unwrap_or = "warn"
+unused_async = "warn"
+large_futures = "warn"
+large_stack_frames = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+mutex_atomic = "warn"
+or_fun_call = "warn"
+significant_drop_tightening = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_sign_loss = "warn"
+cast_precision_loss = "warn"
+multiple_unsafe_ops_per_block = "warn"
+# Vec::with_capacity vs default is a style tradeoff for tiny vectors, so keep it
+# as a manifest-level lint config instead of local `#[allow]` attributes.
+vec_init_then_push = "allow"
+
+[features]
+default = ["ring"]
+# TLS crypto backend — enable exactly one. `ring` (the default) needs no C toolchain and is the
+# cleanest fit for the static/musl and FreeBSD builds this repo targets. `aws-lc-rs` tracks the
+# rustls upstream default and is actively AWS-maintained (FIPS-capable), but pulls in cmake + a C
+# compiler at build time. Build with it via `cargo build --no-default-features --features aws-lc-rs`.
+ring = ["rustls/ring", "tokio-rustls/ring"]
+aws-lc-rs = ["rustls/aws-lc-rs", "tokio-rustls/aws-lc-rs"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+futures = "0.3"
+# The crypto provider (ring / aws-lc-rs) is selected by this crate's features above, not here.
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+nix = { version = "0.31", default-features = false, features = [
+    "socket", "uio", "fs", "signal", "process", "poll", "user",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler = "0.5"
+
+[dev-dependencies]
+rcgen = { version = "0.14.8", default-features = false, features = ["ring", "pem"] }
+# test-util enables tokio::time::pause + start_paused
+# Needed by the supervisor's successor-wait/monitor state-machine tests
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = "symbols"
